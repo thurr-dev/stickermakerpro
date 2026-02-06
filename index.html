@@ -3,22 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sticker Expert - 100KB Edition</title>
+    <title>Sticker Maker Pro 100KB</title>
+    
     <script src="coi-serviceworker.js"></script>
+    
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
     
     <style>
         :root { --whatsapp: #00a884; --bg: #0b141a; --card: #111b21; --text: #e9edef; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
-        .container { background: var(--card); padding: 30px; border-radius: 20px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
+        .container { background: var(--card); padding: 30px; border-radius: 20px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid #2a3942; }
         
-        .drop-zone { border: 2px dashed #3b4a54; border-radius: 15px; padding: 30px; margin: 20px 0; cursor: pointer; transition: 0.3s; }
+        .drop-zone { border: 2px dashed #3b4a54; border-radius: 15px; padding: 30px; margin: 20px 0; cursor: pointer; transition: 0.3s; position: relative; }
         .drop-zone.drag-over { border-color: var(--whatsapp); background: rgba(0, 168, 132, 0.1); }
         
         video { width: 100%; border-radius: 10px; display: none; background: #000; margin-bottom: 15px; }
         
         .btn { color: white; border: none; padding: 15px; border-radius: 10px; font-weight: bold; cursor: pointer; width: 100%; font-size: 16px; text-decoration: none; display: block; box-sizing: border-box; transition: 0.2s; }
-        .btn:disabled { background: #3b4a54 !important; cursor: not-allowed; opacity: 0.7; }
+        .btn:disabled { background: #3b4a54 !important; cursor: wait; opacity: 0.7; }
         
         .btn-main { background: var(--whatsapp); }
         .btn-webp { background: #a633d6; margin-bottom: 10px; }
@@ -29,26 +31,28 @@
         .fill { height: 100%; background: var(--whatsapp); width: 0%; transition: 0.2s; }
         
         .result-item { margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid #2a3942; }
-        .result-label { font-size: 12px; color: #8696a0; margin-bottom: 8px; display: block; text-transform: uppercase; letter-spacing: 1px; }
+        .result-label { font-size: 11px; color: #8696a0; margin-bottom: 8px; display: block; text-transform: uppercase; }
         #timer { color: #ff5e5e; font-weight: bold; margin-top: 15px; display: none; font-size: 13px; }
+        #status-msg { font-size: 13px; margin-top: 10px; color: #8696a0; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h2>Sticker Optimizer</h2>
-    <p style="color: #8696a0; font-size: 14px;">Versão WebP 100KB e MP4 para Bot</p>
+    <p style="color: #8696a0; font-size: 14px; margin-top: 0;">Focado em 100KB (WebP) e MP4 para Bots</p>
 
     <div class="drop-zone" id="drop-zone">
-        <span id="label">Arraste o vídeo aqui</span>
+        <span id="label">Arraste o vídeo aqui <br>ou clique para selecionar</span>
         <video id="preview" muted loop playsinline></video>
         <input type="file" id="file-input" accept="video/*" hidden>
     </div>
 
-    <button id="convert-btn" class="btn btn-main" disabled>Iniciando motor...</button>
+    <button id="convert-btn" class="btn btn-main" disabled>Aguardando motor...</button>
+    <div id="status-msg">Verificando segurança do navegador...</div>
 
     <div class="progress-box" id="progress-box">
-        <span id="status" style="font-size: 14px;">Processando...</span>
+        <span id="progress-text" style="font-size: 14px;">Processando...</span>
         <div class="bar"><div class="fill" id="fill"></div></div>
     </div>
 
@@ -58,29 +62,46 @@
 
 <script>
     const { createFFmpeg, fetchFile } = FFmpeg;
-    const ffmpeg = createFFmpeg({ log: false });
+    const ffmpeg = createFFmpeg({ log: true }); // Ativado log para debug no F12
     
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
     const preview = document.getElementById('preview');
     const convertBtn = document.getElementById('convert-btn');
-    const status = document.getElementById('status');
+    const statusMsg = document.getElementById('status-msg');
     const fill = document.getElementById('fill');
     const resultArea = document.getElementById('result-area');
 
     let selectedFile = null;
 
-    (async () => {
+    // Lógica de inicialização automática
+    async function initFFmpeg() {
         try {
+            // Se não estiver em ambiente isolado, o worker vai recarregar a página
+            if (!window.crossOriginIsolated) {
+                statusMsg.innerText = "Habilitando segurança (A página pode recarregar)...";
+                return; 
+            }
+            
+            statusMsg.innerText = "Carregando motor FFmpeg...";
             await ffmpeg.load();
-            convertBtn.innerText = "GERAR FIGURINHAS";
-            convertBtn.disabled = true; // Só ativa após selecionar arquivo
-            status.innerText = "Pronto";
+            
+            statusMsg.innerText = "Motor pronto ✅";
+            statusMsg.style.color = "#00a884";
+            convertBtn.innerText = "CONVERTER AGORA";
+            // Botão só habilita se tiver arquivo
+            if(selectedFile) convertBtn.disabled = false;
         } catch (e) {
-            status.innerText = "Erro ao carregar o motor.";
+            console.error(e);
+            statusMsg.innerText = "Erro ao iniciar. Tente atualizar a página (F5).";
+            statusMsg.style.color = "#ff5e5e";
         }
-    })();
+    }
 
+    // Executa a inicialização
+    initFFmpeg();
+
+    // Eventos de Interface
     dropZone.onclick = () => fileInput.click();
     fileInput.onchange = (e) => handleFile(e.target.files[0]);
     dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); };
@@ -92,12 +113,15 @@
     };
 
     function handleFile(file) {
-        if (file) {
+        if (file && file.type.startsWith('video/')) {
             selectedFile = file;
             preview.src = URL.createObjectURL(file);
             preview.style.display = 'block';
             document.getElementById('label').style.display = 'none';
-            convertBtn.disabled = false;
+            // Só ativa se o motor estiver pronto
+            if (statusMsg.innerText.includes("pronto")) {
+                convertBtn.disabled = false;
+            }
         }
     }
 
@@ -108,15 +132,17 @@
         resultArea.innerHTML = "";
 
         ffmpeg.setProgress(({ ratio }) => {
-            fill.style.width = Math.round(ratio * 100) + '%';
-            status.innerText = `Convertendo: ${Math.round(ratio * 100)}%`;
+            const p = Math.round(ratio * 100);
+            fill.style.width = p + '%';
+            document.getElementById('progress-text').innerText = `Convertendo: ${p}%`;
         });
 
-        ffmpeg.FS('writeFile', 'input', await fetchFile(selectedFile));
+        // Grava arquivo na memória
+        ffmpeg.FS('writeFile', 'temp_input', await fetchFile(selectedFile));
 
         // --- GERAÇÃO 1: MP4 PARA BOT ---
         await ffmpeg.run(
-            '-i', 'input', '-t', '5',
+            '-i', 'temp_input', '-t', '5',
             '-vf', 'scale=320:320:force_original_aspect_ratio=increase,crop=320:320,fps=10',
             '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '35', '-b:v', '250k',
             '-pix_fmt', 'yuv420p', '-an', 'output.mp4'
@@ -124,10 +150,10 @@
         const mp4Data = ffmpeg.FS('readFile', 'output.mp4');
         const mp4Url = URL.createObjectURL(new Blob([mp4Data.buffer], { type: 'video/mp4' }));
 
-        // --- GERAÇÃO 2: WebP ULTRA-COMPRIMIDO (ALVO 100KB) ---
-        // Configurações extremas: 3 segundos, 5 FPS, Qualidade 5.
+        // --- GERAÇÃO 2: WebP ULTRA-COMPRIMIDO (FOCO 100KB) ---
+        // Configurações: 3s, 5 FPS, Qualidade 5, 512px
         await ffmpeg.run(
-            '-i', 'input', '-t', '3',
+            '-i', 'temp_input', '-t', '3',
             '-vf', 'scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=5',
             '-vcodec', 'libwebp', '-lossless', '0', '-q:v', '5', '-loop', '0', '-an', 'output.webp'
         );
@@ -136,4 +162,35 @@
 
         resultArea.innerHTML = `
             <div class="result-item">
-                <span
+                <span class="result-label">WebP (512px - Alvo 100KB)</span>
+                <a href="${webpUrl}" download="sticker_100kb.webp" class="btn btn-webp">BAIXAR WEBP</a>
+            </div>
+            <div class="result-item">
+                <span class="result-label">MP4 Otimizado (Para bots)</span>
+                <a href="${mp4Url}" download="sticker_bot.mp4" class="btn btn-mp4">BAIXAR MP4</a>
+            </div>
+        `;
+        
+        statusMsg.innerText = "Processamento finalizado!";
+        startTimer(20, [mp4Url, webpUrl]);
+    };
+
+    function startTimer(mins, urls) {
+        let time = mins * 60;
+        const tDisplay = document.getElementById('timer');
+        tDisplay.style.display = 'block';
+        const interval = setInterval(() => {
+            let m = Math.floor(time / 60);
+            let s = time % 60;
+            tDisplay.innerText = `Links expiram em ${m}:${s < 10 ? '0' : ''}${s}. A página irá resetar.`;
+            if (time <= 0) {
+                clearInterval(interval);
+                urls.forEach(url => URL.revokeObjectURL(url));
+                location.reload();
+            }
+            time--;
+        }, 1000);
+    }
+</script>
+</body>
+</html>
