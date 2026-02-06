@@ -3,81 +3,86 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sticker Maker - MP4 Loop</title>
+    <title>Sticker Video Optimizer</title>
     <script src="coi-serviceworker.js"></script>
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
     
     <style>
         :root { --primary: #00a884; --bg: #0b141a; --card: #111b21; --text: #e9edef; }
-        body { font-family: sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
-        .container { background: var(--card); padding: 30px; border-radius: 20px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        .drop-zone { border: 2px dashed #3b4a54; border-radius: 15px; padding: 40px 20px; margin: 20px 0; cursor: pointer; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
+        .container { background: var(--card); padding: 30px; border-radius: 20px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-top: 20px; }
+        
+        .drop-zone { border: 2px dashed #3b4a54; border-radius: 15px; padding: 40px 20px; margin: 20px 0; cursor: pointer; transition: 0.3s; }
         .drop-zone.drag-over { border-color: var(--primary); background: rgba(0, 168, 132, 0.1); }
-        video { width: 100%; border-radius: 10px; display: none; background: #000; margin-bottom: 10px; }
-        .btn { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 10px; font-weight: bold; cursor: pointer; width: 100%; font-size: 16px; transition: 0.3s; }
-        .btn:disabled { background: #3b4a54; cursor: not-allowed; opacity: 0.6; }
-        .progress-box { display: none; margin-top: 20px; }
-        .bar { height: 10px; background: #2a3942; border-radius: 5px; overflow: hidden; margin-top: 8px; }
+        
+        video { width: 100%; border-radius: 10px; display: none; background: #000; margin-bottom: 15px; }
+        
+        .btn { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 10px; font-weight: bold; cursor: pointer; width: 100%; font-size: 16px; text-decoration: none; display: block; box-sizing: border-box; }
+        .btn:disabled { background: #3b4a54; cursor: not-allowed; opacity: 0.7; }
+        .btn-download { background: #34b7f1; margin-top: 15px; }
+
+        .progress-container { display: none; margin-top: 20px; }
+        .bar { height: 8px; background: #2a3942; border-radius: 4px; overflow: hidden; margin-top: 8px; }
         .fill { height: 100%; background: var(--primary); width: 0%; transition: 0.2s; }
-        #timer { color: #ff5e5e; font-weight: bold; margin-top: 15px; display: none; font-size: 12px; }
+        
+        #timer { color: #ff5e5e; font-weight: bold; margin-top: 15px; display: none; font-size: 13px; border-top: 1px solid #3b4a54; padding-top: 10px; }
+        #status { font-size: 14px; color: var(--primary); }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>MP4 Sticker Maker</h2>
-    <p style="color: #8696a0; font-size: 14px;">Converta vídeos para MP4 quadrado < 1MB</p>
+    <h2 style="margin-bottom: 5px;">Bot Sticker Prep</h2>
+    <p style="color: #8696a0; font-size: 14px; margin-top: 0;">Otimiza vídeo para o bot não estourar 1MB</p>
 
     <div class="drop-zone" id="drop-zone">
-        <span id="label">Arraste o vídeo aqui</span>
-        <video id="preview" muted></video>
+        <span id="label">Arraste o vídeo aqui <br>ou clique para selecionar</span>
+        <video id="preview" muted loop playsinline></video>
         <input type="file" id="file-input" accept="video/*" hidden>
     </div>
 
-    <button id="convert-btn" class="btn" disabled>Aguardando motor...</button>
+    <button id="convert-btn" class="btn" disabled>Carregando sistema...</button>
 
-    <div class="progress-box" id="progress-box">
-        <span id="status">Iniciando...</span>
+    <div class="progress-container" id="progress-box">
+        <span id="status">Aguardando...</span>
         <div class="bar"><div class="fill" id="fill"></div></div>
     </div>
 
-    <div id="result-area" style="margin-top:20px;"></div>
+    <div id="result-area"></div>
     <p id="timer"></p>
 </div>
 
 <script>
     const { createFFmpeg, fetchFile } = FFmpeg;
-    // Otimização: Forçar o uso de apenas 1 core se necessário para evitar travas em PCs lentos
-    const ffmpeg = createFFmpeg({ log: true });
+    const ffmpeg = createFFmpeg({ log: false });
     
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
     const preview = document.getElementById('preview');
+    const label = document.getElementById('label');
     const convertBtn = document.getElementById('convert-btn');
-    const fill = document.getElementById('fill');
     const status = document.getElementById('status');
+    const fill = document.getElementById('fill');
+    const timerText = document.getElementById('timer');
 
     let selectedFile = null;
 
-    // Carregamento Seguro
+    // Inicialização do FFmpeg
     (async () => {
         try {
-            if (!window.crossOriginIsolated) {
-                status.innerText = "Erro: Cabeçalhos de segurança ausentes. Verifique o coi-serviceworker.js";
-                return;
-            }
             await ffmpeg.load();
-            convertBtn.innerText = "CONVERTER PARA MP4";
-            status.innerText = "Pronto!";
+            convertBtn.innerText = "OTIMIZAR PARA BOT";
+            status.innerText = "Pronto para processar";
         } catch (e) {
-            console.error(e);
-            status.innerText = "Erro ao carregar o motor FFmpeg.";
+            status.innerText = "Erro: Verifique o coi-serviceworker.js";
+            status.style.color = "#ff5e5e";
         }
     })();
 
-    // Funções de Arrastar/Selecionar
+    // Lógica de Upload e Drag & Drop
     dropZone.onclick = () => fileInput.click();
     fileInput.onchange = (e) => handleFile(e.target.files[0]);
+    
     dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); };
     dropZone.ondragleave = () => dropZone.classList.remove('drag-over');
     dropZone.ondrop = (e) => {
@@ -87,46 +92,46 @@
     };
 
     function handleFile(file) {
-        if (file) {
+        if (file && file.type.startsWith('video/')) {
             selectedFile = file;
             preview.src = URL.createObjectURL(file);
             preview.style.display = 'block';
-            document.getElementById('label').style.display = 'none';
+            label.style.display = 'none';
             convertBtn.disabled = false;
         }
     }
 
+    // Processamento do Vídeo
     convertBtn.onclick = async () => {
         if (!selectedFile) return;
         
         document.getElementById('progress-box').style.display = 'block';
         convertBtn.disabled = true;
         
-        // Limpar arquivos antigos da memória virtual
-        try { ffmpeg.FS('unlink', 'input'); } catch(e) {}
-        try { ffmpeg.FS('unlink', 'output.mp4'); } catch(e) {}
-
         ffmpeg.setProgress(({ ratio }) => {
-            const p = Math.max(0, Math.min(100, Math.round(ratio * 100)));
+            const p = Math.round(ratio * 100);
             fill.style.width = p + '%';
-            status.innerText = `Convertendo: ${p}%`;
+            status.innerText = `Processando: ${p}%`;
         });
 
-        // Carregar o arquivo para o FFmpeg
-        status.innerText = "Lendo arquivo...";
+        // Limpa cache e escreve arquivo
+        try { ffmpeg.FS('unlink', 'input'); } catch(e) {}
         ffmpeg.FS('writeFile', 'input', await fetchFile(selectedFile));
 
-        status.innerText = "Processando vídeo...";
-        
-        // Comando ULTRA OTIMIZADO para não travar
-        // Reduzimos o preset para 'ultrafast' para acabar logo e não estourar a RAM
+        /* CONFIGURAÇÃO PARA STICKER BOT:
+           -t 5: Duração curta
+           -vf: Resolução 320px (leve) e 10 FPS (estável)
+           -crf 35: Compressão alta para o WebP do bot não crescer
+           -b:v 250k: Bitrate baixo para garantir < 1MB final
+        */
         await ffmpeg.run(
             '-i', 'input',
-            '-t', '5', // Limite de 5 segundos
-            '-vf', 'scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=15',
+            '-t', '5',
+            '-vf', 'scale=320:320:force_original_aspect_ratio=increase,crop=320:320,fps=10',
             '-c:v', 'libx264',
-            '-preset', 'ultrafast', 
-            '-crf', '30',
+            '-preset', 'ultrafast',
+            '-crf', '35',
+            '-b:v', '250k',
             '-pix_fmt', 'yuv420p',
             '-an',
             'output.mp4'
@@ -136,21 +141,24 @@
         const url = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
 
         document.getElementById('result-area').innerHTML = 
-            `<a href="${url}" download="loop.mp4" class="btn" style="background:#34b7f1">BAIXAR MP4</a>`;
+            `<a href="${url}" download="sticker_prep.mp4" class="btn btn-download">BAIXAR PARA ENVIAR AO BOT</a>`;
         
-        status.innerText = "Concluído!";
+        status.innerText = "Otimização Concluída!";
         startTimer(20, url);
     };
 
     function startTimer(mins, url) {
         let time = mins * 60;
-        const t = document.getElementById('timer');
-        t.style.display = 'block';
-        const timer = setInterval(() => {
+        timerText.style.display = 'block';
+        const interval = setInterval(() => {
             let m = Math.floor(time / 60);
             let s = time % 60;
-            t.innerText = `Expira em: ${m}:${s < 10 ? '0' : ''}${s}`;
-            if (time <= 0) { clearInterval(timer); location.reload(); }
+            timerText.innerText = `Download expira em: ${m}:${s < 10 ? '0' : ''}${s}`;
+            if (time <= 0) {
+                clearInterval(interval);
+                URL.revokeObjectURL(url);
+                location.reload();
+            }
             time--;
         }, 1000);
     }
