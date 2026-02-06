@@ -3,59 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video to GIF Sticker Maker</title>
+    <title>Video to MP4 Loop Maker</title>
     <script src="coi-serviceworker.js"></script>
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
     
     <style>
-        :root { --primary: #25D366; --bg: #0b141a; --card: #111b21; --text: #e9edef; }
+        :root { --primary: #00a884; --bg: #0b141a; --card: #111b21; --text: #e9edef; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
         .container { background: var(--card); padding: 30px; border-radius: 20px; width: 100%; max-width: 450px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-top: 50px; }
         
-        /* Área de Drag & Drop */
-        .drop-zone { 
-            border: 3px dashed #3b4a54; 
-            border-radius: 15px; 
-            padding: 40px 20px; 
-            margin: 20px 0; 
-            cursor: pointer; 
-            transition: all 0.3s ease;
-            position: relative;
-        }
-        .drop-zone.drag-over { border-color: var(--primary); background: rgba(37, 211, 102, 0.1); }
+        .drop-zone { border: 3px dashed #3b4a54; border-radius: 15px; padding: 40px 20px; margin: 20px 0; cursor: pointer; transition: 0.3s; position: relative; }
+        .drop-zone.drag-over { border-color: var(--primary); background: rgba(0, 168, 132, 0.1); }
         
-        video { width: 100%; border-radius: 10px; display: none; margin-top: 10px; }
+        video { width: 100%; border-radius: 10px; display: none; margin-top: 10px; background: #000; }
         
-        .btn { 
-            background: var(--primary); color: white; border: none; padding: 15px; 
-            border-radius: 10px; font-weight: bold; cursor: pointer; width: 100%; 
-            font-size: 16px; text-decoration: none; display: block; margin-top: 10px;
-            box-sizing: border-box;
-        }
+        .btn { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 10px; font-weight: bold; cursor: pointer; width: 100%; font-size: 16px; text-decoration: none; display: block; margin-top: 10px; box-sizing: border-box; }
         .btn:disabled { background: #3b4a54; cursor: not-allowed; }
-        .btn-download { background: #34b7f1; margin-top: 20px; }
+        .btn-download { background: #34b7f1; }
 
         #progress-container { display: none; margin-top: 20px; }
         .bar { height: 10px; background: #2a3942; border-radius: 5px; overflow: hidden; margin-top: 8px; }
         .fill { height: 100%; background: var(--primary); width: 0%; transition: 0.2s; }
         
-        #timer { color: #ff5e5e; font-weight: bold; margin-top: 15px; display: none; font-size: 14px; }
+        #timer { color: #ff5e5e; font-weight: bold; margin-top: 15px; display: none; font-size: 13px; }
         #label { font-size: 14px; color: #8696a0; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>GIF Sticker Maker</h2>
-    <p style="color: #8696a0;">Arraste um vídeo para criar um GIF de 1MB</p>
+    <h2>MP4 Sticker Maker</h2>
+    <p style="color: #8696a0;">Vídeos quadrados em MP4 (estilo GIF)</p>
 
     <div class="drop-zone" id="drop-zone">
         <span id="label">Arraste seu vídeo aqui <br>ou clique para selecionar</span>
-        <video id="preview" controls></video>
+        <video id="preview" controls muted></video>
         <input type="file" id="file-input" accept="video/*" hidden>
     </div>
 
-    <button id="convert-btn" class="btn" disabled>CONVERTER PARA GIF</button>
+    <button id="convert-btn" class="btn" disabled>CONVERTER PARA MP4 (LOOP)</button>
 
     <div id="progress-container">
         <span id="status">Iniciando...</span>
@@ -81,31 +67,22 @@
 
     let selectedFile = null;
 
-    // 1. Inicializa o FFmpeg
     (async () => {
         try {
             await ffmpeg.load();
-            status.innerText = "Sistema pronto para uso!";
+            status.innerText = "Pronto para converter!";
         } catch (e) {
-            status.innerText = "Erro de carregamento. Verifique o Service Worker.";
+            status.innerText = "Erro ao carregar o motor.";
         }
     })();
 
-    // 2. Lógica de Arrastar e Soltar (Drag & Drop)
-    dropZone.ondragover = (e) => {
-        e.preventDefault();
-        dropZone.classList.add('drag-over');
-    };
-
-    dropZone.ondragleave = () => {
-        dropZone.classList.remove('drag-over');
-    };
-
+    // Lógica Drag & Drop
+    dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); };
+    dropZone.ondragleave = () => { dropZone.classList.remove('drag-over'); };
     dropZone.ondrop = (e) => {
         e.preventDefault();
         dropZone.classList.remove('drag-over');
-        const file = e.dataTransfer.files[0];
-        handleFile(file);
+        handleFile(e.dataTransfer.files[0]);
     };
 
     dropZone.onclick = () => fileInput.click();
@@ -118,54 +95,56 @@
             preview.style.display = 'block';
             label.style.display = 'none';
             convertBtn.disabled = false;
-        } else {
-            alert("Por favor, selecione apenas arquivos de vídeo.");
         }
     }
 
-    // 3. Lógica de Conversão
     convertBtn.onclick = async () => {
         if (!selectedFile) return;
-
         document.getElementById('progress-container').style.display = 'block';
         convertBtn.disabled = true;
 
         ffmpeg.setProgress(({ ratio }) => {
             fill.style.width = (ratio * 100) + '%';
-            status.innerText = `Processando: ${Math.round(ratio * 100)}%`;
+            status.innerText = `Convertendo: ${Math.round(ratio * 100)}%`;
         });
 
-        // Salva o arquivo na memória virtual
-        ffmpeg.FS('writeFile', 'input_file', await fetchFile(selectedFile));
+        ffmpeg.FS('writeFile', 'input_raw', await fetchFile(selectedFile));
 
-        // Comando FFmpeg para GIF Otimizado (< 1MB)
-        // fps=10 e scale=512 são ideais para o WhatsApp
+        /* Comando para MP4 de alta compatibilidade:
+           -vf: 512x512, crop centralizado.
+           -c:v libx264: Codec padrão MP4.
+           -pix_fmt yuv420p: Garante que rode em qualquer celular.
+           -an: Remove o áudio para economizar espaço (essencial para "GIFs").
+        */
         await ffmpeg.run(
-            '-i', 'input_file',
-            '-t', '5', 
-            '-vf', 'fps=10,scale=512:512:force_original_aspect_ratio=increase,crop=512:512,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse',
-            'output.gif'
+            '-i', 'input_raw',
+            '-t', '6',
+            '-vf', 'scale=512:512:force_original_aspect_ratio=increase,crop=512:512',
+            '-c:v', 'libx264',
+            '-crf', '28', 
+            '-preset', 'veryfast',
+            '-pix_fmt', 'yuv420p',
+            '-an', 
+            'output.mp4'
         );
 
-        const data = ffmpeg.FS('readFile', 'output.gif');
-        const url = URL.createObjectURL(new Blob([data.buffer], { type: 'image/gif' }));
+        const data = ffmpeg.FS('readFile', 'output.mp4');
+        const url = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
 
-        const resArea = document.getElementById('result-area');
-        resArea.innerHTML = `<a href="${url}" download="sticker_figura.gif" class="btn btn-download">BAIXAR FIGURINHA GIF</a>`;
+        document.getElementById('result-area').innerHTML = 
+            `<a href="${url}" download="video_loop.mp4" class="btn btn-download">BAIXAR MP4 (VERSÃO GIF)</a>`;
         
-        status.innerText = "Concluído!";
+        status.innerText = "Pronto!";
         startTimer(20, url);
     };
 
-    // 4. Temporizador de 20 minutos
     function startTimer(mins, url) {
         let time = mins * 60;
         timerText.style.display = 'block';
         const interval = setInterval(() => {
             let m = Math.floor(time / 60);
             let s = time % 60;
-            timerText.innerText = `O link expira em ${m}:${s < 10 ? '0' : ''}${s}. A página irá resetar automaticamente.`;
-            
+            timerText.innerText = `O link expira em ${m}:${s < 10 ? '0' : ''}${s}. A página irá resetar.`;
             if (time <= 0) {
                 clearInterval(interval);
                 URL.revokeObjectURL(url);
