@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StickerMaker Pro - Vídeo para Figurinha</title>
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+    <style>
+        :root {
+            --primary: #25D366;
+            --bg: #0b141a;
+            --card: #111b21;
+            --text: #e9edef;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background: var(--card);
+            padding: 2rem;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 450px;
+            text-align: center;
+        }
+
+        .upload-area {
+            border: 2px dashed #3b4a54;
+            border-radius: 15px;
+            padding: 40px 20px;
+            margin: 20px 0;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .upload-area:hover { border-color: var(--primary); }
+
+        #video-preview {
+            width: 100%;
+            max-width: 200px;
+            display: none;
+            margin: 10px auto;
+            border-radius: 10px;
+        }
+
+        .btn {
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 25px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            font-size: 1rem;
+            margin-top: 10px;
+        }
+
+        .btn:disabled { background: #3b4a54; cursor: not-allowed; }
+
+        .progress-container {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .progress-bar {
+            height: 10px;
+            background: #2a3942;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--primary);
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        #timer {
+            color: #ff2e55;
+            font-weight: bold;
+            margin-top: 15px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Sticker Converter</h2>
+    <p style="font-size: 0.9rem; color: #8696a0;">Transforme vídeos em figurinhas (WebP) de até 1MB</p>
+
+    <div class="upload-area" onclick="document.getElementById('file-input').click()">
+        <p id="upload-text">Clique ou arraste seu vídeo aqui</p>
+        <video id="video-preview" controls></video>
+    </div>
+    
+    <input type="file" id="file-input" accept="video/*" hidden>
+    
+    <button id="convert-btn" class="btn" disabled>Converter para Figurinha</button>
+
+    <div class="progress-container" id="progress-box">
+        <p id="status-text">Carregando processador...</p>
+        <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+    </div>
+
+    <div id="result-area"></div>
+    <p id="timer"></p>
+</div>
+
+<script>
+    const { createFFmpeg, fetchFile } = FFmpeg;
+    const ffmpeg = createFFmpeg({ log: true });
+    
+    const fileInput = document.getElementById('file-input');
+    const convertBtn = document.getElementById('convert-btn');
+    const statusText = document.getElementById('status-text');
+    const progressFill = document.getElementById('progress-fill');
+    const timerText = document.getElementById('timer');
+
+    // Inicializa FFmpeg
+    (async () => {
+        try {
+            await ffmpeg.load();
+            statusText.innerText = "Pronto para converter";
+        } catch (e) {
+            statusText.innerText = "Erro ao carregar processador. Use um servidor local.";
+        }
+    })();
+
+    fileInput.onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            document.getElementById('upload-text').style.display = 'none';
+            const preview = document.getElementById('video-preview');
+            preview.src = URL.createObjectURL(file);
+            preview.style.display = 'block';
+            convertBtn.disabled = false;
+        }
+    };
+
+    convertBtn.onclick = async () => {
+        const file = fileInput.files[0];
+        document.getElementById('progress-box').style.display = 'block';
+        convertBtn.disabled = true;
+
+        ffmpeg.setProgress(({ ratio }) => {
+            progressFill.style.width = (ratio * 100) + '%';
+            statusText.innerText = `Processando: ${Math.round(ratio * 100)}%`;
+        });
+
+        // Escreve o arquivo na memória do FFmpeg
+        ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(file));
+
+        /* COMANDO FFmpeg:
+           -t 5: limita a 5 segundos
+           -vf: redimensiona para 512x512 (crop/scale) e ajusta FPS para 15 (reduz tamanho)
+           -loop 0: animação infinita
+        */
+        await ffmpeg.run(
+            '-i', 'input.mp4',
+            '-t', '5',
+            '-vf', 'scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=15',
+            '-q:v', '50', 
+            '-loop', '0',
+            'output.webp'
+        );
+
+        const data = ffmpeg.FS('readFile', 'output.webp');
+        const url = URL.createObjectURL(new Blob([data.buffer], { type: 'image/webp' }));
+
+        // Criar link de download
+        const resultArea = document.getElementById('result-area');
+        resultArea.innerHTML = `<a href="${url}" download="figurinha.webp" class="btn" style="text-decoration:none; display:block; background:#00a884">Baixar Figurinha (WebP)</a>`;
+        
+        startTimer(20, url);
+    };
+
+    function startTimer(minutes, url) {
+        let seconds = minutes * 60;
+        timerText.style.display = 'block';
+        
+        const countdown = setInterval(() => {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            timerText.innerText = `Link expira em: ${mins}:${secs < 10 ? '0' : ''}${secs}`;
+            
+            if (seconds <= 0) {
+                clearInterval(countdown);
+                URL.revokeObjectURL(url);
+                location.reload(); // Reseta o sistema
+            }
+            seconds--;
+        }, 1000);
+    }
+</script>
+
+</body>
+</html>
